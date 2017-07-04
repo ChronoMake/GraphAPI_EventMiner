@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun 22 12:33:37 2017
+Created on Thu Jun 22 15:12:41 2017
 
 @author: Arjun Menon
 """
@@ -23,72 +23,95 @@ graph = facebook.GraphAPI(access_token=token, version = 2.9)
 f = csv.writer(open("asdasd.csv", "w",newline=''))
 f.writerow(['Event ID','Name','Start_Time','End_Time','Owner Name','Owner ID','Tickets URL','Maybe_Attending','Attending_Count','Interested','Event Description','City','Location Name','Street','Zip Code'])
 city='Hyderabad'
+pagiQnext=""
 tags=['id','name','start_time','end_time','owner name','owner id','ticket_uri','maybe_count','attending_count','interested_count','description','city','Location Name','Street','Zip Code']
 #Facebook Search Query Field##Results page is the scrape source
-events = graph.request('/search?q=Events in '+city+'&type=event&limit=1000')
+events = graph.request('/search?q=Events in '+city+'&type=event&limit=50&access_token='+token)
 eventList = events['data']
-#In case you'd like to print as a string in JSON format
-#print(json.dumps(eventList, indent=4, sort_keys=True))
-######Store ID lists from query response to scrape individually from the Events pages#######
-idList=[]
-for event in range(len(eventList)):
-    idList.append(eventList[event]['id'])
-#print(idList)
-
-##print(json.dumps(eventList, indent=4, sort_keys=True)) ##To print out the search list
-res=[]
-print("ID List generated")          #Notification
-
-for i in range(len(idList)):
-    dmp=requests.get(url="https://graph.facebook.com/v2.9/"+idList[i]+"?fields=category%2Cname%2Cowner%2Cattending_count%2Cinterested_count%2Cdescription%2Cend_time%2Cmaybe_count%2Cplace%2Cupdated_time%2Cstart_time%2Cticket_uri&access_token="+token)
-    dmp=dmp.json()      ##Store each event's info in Json format in a list
-    try:
-        if dmp['place']['location']['country']=="India":    ##Validation to detect anomalies such as Hyderabad->Pakistan
-            res.append(dmp)
-    except KeyError as e:  #Handle situations where country is no specified 
-            res.append(dmp)
-            #print("Country unavailable at "+dmp['id'])         ##For Testing
-res=json.dumps(res, indent=4)       
-#print(res)
-x=json.loads(res)
-###CSV header definition and extracting and setting to appropriate fields###
-dictemp=OrderedDict()  ##To ensure correct ordering##
-    #print(x.keys())
-for even in x:
-    try:
-        for key in tags:
+if events['paging']:    
+    pag=events['paging']
+    print(json.dumps(pag, indent=4))
+while events['paging']['cursors']['after']:
+    pagiQnext='/search?q=Events in '+city+'&type=event&limit=50&access_token='+token+'&after='+events['paging']['cursors']['after']
+    #In case you'd like to print as a string in JSON format
+    #print(json.dumps(eventList, indent=4, sort_keys=True))
+    ######Store ID lists from query response to scrape individually from the Events pages#######
+    idList=[]
+    querylist=""
+    querylisarr=[]
+    for event in range(len(eventList)):
+        idList.append(eventList[event]['id'])
+        if event%50==49:
+            querylist+=eventList[event]['id']
+            querylisarr.append(querylist)
+            querylist=""
+        elif event==(len(eventList)-1):
+            querylist+=eventList[event]['id']
+            querylisarr.append(querylist)
+        else:
+            querylist+=eventList[event]['id']+','
+    #print(idList)    
+    #for qin in range(len(querylisarr)):
+    
+    for iter_reqbatch in range(len(querylisarr)):
+        dmp=requests.get(url="https://graph.facebook.com/v2.9/?ids="+querylisarr[iter_reqbatch]+"&fields=category,name,owner,attending_count,interested_count,description,end_time,maybe_count,place,updated_time,start_time,ticket_uri&access_token="+token)
+        dmp=dmp.json()
+        res=json.dumps(dmp, indent=4)       
+        #print(res)
+        x=json.loads(res)
+    ###CSV header definition and extracting and setting to appropriate fields###
+        dictemp=OrderedDict()  ##To ensure correct ordering##
+        #print(x.keys())
+        for even in x.keys():
             try:
-                if key=="owner name":
-                    dictemp[key]=even['owner']['name']
-                elif key=="owner id":
-                    dictemp[key]=even['owner']['id']
-                elif key=="city":
-                    dictemp[key]=even['place']['location']['city']
-                elif key=="Location Name":
-                    dictemp[key]=even['place']['name']
-                elif key=="Street":
-                    dictemp[key]=even['place']['location']['street']
-                elif key=="Zip Code":
-                    dictemp[key]=even['place']['location']['zip']
-                else:
-                    dictemp[key]=even[key]
-            except KeyError as e:       ##Handle cases where fields are missing
-                #print(e)  
-                dictemp[key]=" "        ##Set fields to empty
-        f.writerow(dictemp.values())    ##Write individual Event to sheet
-    except Exception as p:
-        print(p)
-        try:
-            dictemp['description']=even['description'].encode(sys.stdout.encoding, errors='replace') #Handle char encoding anomalies#
-            dictemp['name']=even['name'].encode(sys.stdout.encoding, errors='replace')
-            dictemp['owner name']=x[even]['owner']['name'].encode(sys.stdout.encoding, errors='replace')
-        except Exception as l:
-            print(l)
-            continue
-        try:
-            f.writerow(dictemp.values())        #Write to CSV
-        except:
-            continue
-
-with open('asdasd.csv') as f1:                  #Close File
-    z = csv.reader(f1, delimiter='\t')
+                for key in tags:
+                    try:
+                        if key=="owner name":
+                            dictemp[key]=x[even]['owner']['name']
+                        elif key=="owner id":
+                            dictemp[key]=x[even]['owner']['id']
+                        elif key=="city":
+                            dictemp[key]=x[even]['place']['location']['city']
+                        elif key=="Location Name":
+                            dictemp[key]=x[even]['place']['name']
+                        elif key=="Street":
+                            dictemp[key]=x[even]['place']['location']['street']
+                        elif key=="Zip Code":
+                            dictemp[key]=x[even]['place']['location']['zip']
+                        else:
+                            dictemp[key]=x[even][key]
+                    except KeyError as e:       ##Handle cases where fields are missing
+                        #print(e)  
+                        dictemp[key]=" "        ##Set fields to empty
+                try:
+                    if x[even]['place']['location']['country']=="India":    ##Validation to detect anomalies such as Hyderabad->Pakistan
+                        print(dictemp['id'])
+                        f.writerow(dictemp.values()) 
+                except KeyError as e:  #Handle situations where country is no specified 
+                        print(dictemp['id'])
+                        f.writerow(dictemp.values())
+                        ##Write individual Event to sheet after validating country
+            except Exception as p:
+                print(p)
+                try:
+                    dictemp['description']=x[even]['description'].encode(sys.stdout.encoding, errors='replace') #Handle char encoding anomalies#
+                    dictemp['name']=x[even]['name'].encode(sys.stdout.encoding, errors='replace')
+                    dictemp['owner name']=x[even]['owner']['name'].encode(sys.stdout.encoding, errors='replace')
+                except Exception as l:
+                    print(l)
+                    continue
+                try:
+                    f.writerow(dictemp.values())        #Write to CSV
+                    print(dictemp['id']+"in the catch part")
+                except:
+                    print("Writing Trouble! Ooops!")
+                    continue
+        print("Completed batch "+str(iter_reqbatch))
+        time.sleep(2)
+    with open('asdasd.csv') as f1:                  #Close File
+        z = csv.reader(f1, delimiter='\t')
+    events = graph.request(pagiQnext)
+    eventList = events['data']
+    pag=events['paging']
+    print(json.dumps(pag, indent=4))
+print("While done")
